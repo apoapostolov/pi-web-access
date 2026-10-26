@@ -72,16 +72,15 @@ function tavilyKeyPool(): { keys: string[]; effective: string | null } {
 		if (!Number.isSafeInteger(slot) || slot < 1 || slot > TAVILY_KEY_POOL_MAX) continue;
 		keyBySlot.set(slot, value.trim());
 	}
-	const slots = [...keyBySlot.keys()].sort((a, b) => a - b);
-	const keys = slots.map((slot) => keyBySlot.get(slot)!);
-	if (keys.length === 0) return { keys, effective: null };
-	if (typeof process.env.TAVILY_API_KEY === "string" && process.env.TAVILY_API_KEY.trim().length > 0) {
-		const solo = process.env.TAVILY_API_KEY.trim();
-		if (!keys.includes(solo)) keys.push(solo);
-	}
+	const numberedKeys = [...keyBySlot.entries()].sort(([left], [right]) => left - right);
+	const slots = numberedKeys.map(([slot]) => slot);
+	const keys = numberedKeys.map(([, key]) => key);
+	const solo = typeof process.env.TAVILY_API_KEY === "string" ? process.env.TAVILY_API_KEY.trim() : "";
+	const standalone = solo.length > 0 && !keys.includes(solo) ? solo : null;
+	if (keys.length === 0) return { keys: standalone ? [standalone] : [], effective: standalone };
 	const requestedSlot = Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1);
 	const selectedSlot = slots.find((slot) => slot >= requestedSlot) ?? slots[0];
-	return { keys, effective: keyBySlot.get(selectedSlot) ?? keys[0] };
+	return { keys: standalone ? [...keys, standalone] : keys, effective: keyBySlot.get(selectedSlot) ?? keys[0] };
 }
 
 function getApiUrl(): string {
@@ -203,7 +202,7 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 }
 
 function isAbortError(err: unknown): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
+	return err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
 }
 
 function tavilyErrorStatus(err: unknown): number {

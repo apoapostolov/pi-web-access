@@ -585,7 +585,11 @@ A command source is not run while the extension loads or registers tools. Each s
 
 `mistralSearchModel` defaults to `mistral-small-latest` and must be a non-empty string. `mistralSearchTool` defaults to `web_search` and accepts only `web_search` or the opt-in `web_search_premium` tool.
 
-Set `braveBaseUrl`, `exaBaseUrl`, or `tavilyBaseUrl` to route those providers through a compatible HTTPS API gateway. `BRAVE_BASE_URL`, `EXA_BASE_URL`, and `TAVILY_BASE_URL` are the environment-variable equivalents and take precedence over config. Brave appends `/web/search`, Exa appends `/answer` or `/search`, and Tavily appends `/search`. Defaults remain the providers' official API roots. `exaBaseUrl` applies only to keyed direct API calls; zero-config Exa MCP search continues to use Exa's hosted MCP endpoint. Invalid overrides fail before a request is sent instead of falling back to an official endpoint, and credential headers are removed if a gateway redirects to another origin.
+### Tavily key pool
+
+Tavily can use a bounded pool of up to 20 numbered environment keys: `TAVILY_API_KEY_1` through `TAVILY_API_KEY_20`. Set `TAVILY_API_KEY_INDEX` to the numbered slot to start from; missing slots are skipped, and rotation wraps through the configured numbered keys. If `TAVILY_API_KEY` is also set, it is tried only after all numbered keys. On authentication or quota errors (401, 402, 403, 429, or 432), search advances to the next key. The standalone `TAVILY_API_KEY` remains supported without a numbered pool.
+
+ `BRAVE_BASE_URL`, `EXA_BASE_URL`, and `TAVILY_BASE_URL` are the environment-variable equivalents and take precedence over config. Brave appends `/web/search`, Exa appends `/answer` or `/search`, and Tavily appends `/search`. Defaults remain the providers' official API roots. `exaBaseUrl` applies only to keyed direct API calls; zero-config Exa MCP search continues to use Exa's hosted MCP endpoint. Invalid overrides fail before a request is sent instead of falling back to an official endpoint, and credential headers are removed if a gateway redirects to another origin.
 
 `authFetch` configures named local browser-cookie auth profiles for explicit `fetch_content` calls. A profile can be a host array (`"work": ["docs.company.com"]`) or an object with `hosts`, optional `chromeProfile`, `redirects: "same-origin"`, and `cache: "session" | "off"`.
 

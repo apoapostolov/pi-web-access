@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added Tavily key-pool failover with numbered environment slots and `TAVILY_API_KEY_INDEX` rotation. Thanks to [@apoapostolov](https://github.com/apoapostolov) for [PR #430](https://github.com/nicobailon/pi-web-access/pull/430).
+
 ## [0.31.0] - 2026-09-22
 
 ### Highlights

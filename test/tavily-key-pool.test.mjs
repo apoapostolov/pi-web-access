@@ -17,11 +17,8 @@ async function createHome(config) {
 
 function runChild(script, env) {
 	const childEnv = { ...process.env };
-	for (const key of Object.keys(childEnv)) {
-		if (key === "PI_CODING_AGENT_DIR" || key === "TAVILY_API_KEY" || key === "TAVILY_API_KEY_INDEX" || /^TAVILY_API_KEY_\d+$/.test(key)) {
-			delete childEnv[key];
-		}
-	}
+	const numberedSlots = Object.keys(childEnv).filter((key) => /^TAVILY_API_KEY_\d+$/.test(key));
+	for (const key of ["PI_CODING_AGENT_DIR", "TAVILY_API_KEY", "TAVILY_API_KEY_INDEX", ...numberedSlots]) delete childEnv[key];
 	Object.assign(childEnv, env);
 	return spawnSync(process.execPath, ["--input-type=module"], {
 		input: script,
@@ -115,19 +112,57 @@ test("TAVILY_API_KEY_INDEX skips empty numbered slots and wraps through the conf
 		globalThis.fetch = async (url, init = {}) => {
 			const headers = Object.fromEntries(new Headers(init.headers));
 			calls.push(headers.authorization.replace("Bearer ", ""));
-			if (String(headers.authorization).endsWith("tavily-pool-key-1")) {
-				return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
-			}
 			return new Response("{}", { status: 429 });
 		};
-		const result = await searchWithTavily("tavily", { numResults: 1 });
-		console.log(JSON.stringify({ ok: true, keys: calls, results: result.results.length }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "2" });
+		try {
+			await searchWithTavily("tavily", { numResults: 1 });
+		} catch (err) {
+			console.log(JSON.stringify({ error: String(err.message), keys: calls }));
+		}
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "5" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.equal(output.ok, true);
+	assert.match(output.error, /Tavily API error 429/);
 	assert.deepEqual(output.keys, ["tavily-pool-key-5", "tavily-pool-key-1"]);
+});
+
+test("numbered keys are exhausted before the standalone key fallback", async () => {
+	const { home, agentDir } = await createHome({});
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const authorization = new Headers(init.headers).get("authorization");
+			calls.push(authorization.replace("Bearer ", ""));
+			return new Response("{}", { status: 429 });
+		};
+		try { await searchWithTavily("tavily", { numResults: 1 }); } catch {}
+		console.log(JSON.stringify(calls));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "numbered-1", TAVILY_API_KEY_5: "numbered-5", TAVILY_API_KEY_INDEX: "5", TAVILY_API_KEY: "standalone" });
+
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout.trim()), ["numbered-5", "numbered-1", "standalone"]);
+});
+
+test("429 response bodies mentioning abort still advance the key pool", async () => {
+	const { home, agentDir } = await createHome({});
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const authorization = new Headers(init.headers).get("authorization");
+			calls.push(authorization.replace("Bearer ", ""));
+			if (authorization.endsWith("second")) return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
+			return new Response("request abort due to quota", { status: 429 });
+		};
+		const result = await searchWithTavily("tavily", { numResults: 1 });
+		console.log(JSON.stringify({ calls, results: result.results.length }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "first", TAVILY_API_KEY_2: "second" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.calls, ["first", "second"]);
 	assert.equal(output.results, 1);
 });
 
